@@ -1,0 +1,208 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Annealing Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap: wrap; }
+    .cards { display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap:12px; margin-top: 16px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 16px; padding: 12px 14px; box-shadow: 0 1px 8px rgba(0,0,0,0.05); }
+    .label { color:#6b7280; font-size: 12px; }
+    .value { font-size: 18px; font-weight: 700; margin-top: 6px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+    .panel { border: 1px solid #e5e7eb; border-radius: 16px; padding: 14px; box-shadow: 0 1px 8px rgba(0,0,0,0.05); }
+    canvas { width: 100% !important; height: 320px !important; }
+    .muted { color:#6b7280; font-size: 13px; }
+    @media (max-width: 1100px) {
+      .cards { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+      .grid { grid-template-columns: 1fr; }
+    }
+    button { padding: 8px 12px; border-radius: 12px; border: 1px solid #e5e7eb; background: white; cursor:pointer; }
+    button:hover { background: #f9fafb; }
+    input { padding: 8px 10px; border-radius: 12px; border: 1px solid #e5e7eb; width: 110px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <div style="font-size: 22px; font-weight: 800;">Simulated Annealing Dashboard</div>
+      <div class="muted">Reading: <b>{{ csv_path }}</b></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+      <div class="muted">Refresh (s)</div>
+      <input id="refreshSeconds" type="number" min="1" value="2"/>
+      <div class="muted">Max rows</div>
+      <input id="maxRows" type="number" min="200" value="2000"/>
+      <button id="applyBtn">Apply</button>
+      <button id="pauseBtn">Pause</button>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Iteration</div><div id="kpiIteration" class="value">—</div></div>
+    <div class="card"><div class="label">Temperature</div><div id="kpiTemp" class="value">—</div></div>
+    <div class="card"><div class="label">Current cost</div><div id="kpiCurrent" class="value">—</div></div>
+    <div class="card"><div class="label">Best cost</div><div id="kpiBest" class="value">—</div></div>
+    <div class="card"><div class="label">Acceptance (overall)</div><div id="kpiAccOverall" class="value">—</div></div>
+    <div class="card"><div class="label">Acceptance (last 200)</div><div id="kpiAcc200" class="value">—</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div style="display:flex; justify-content:space-between; align-items:end;">
+        <div>
+          <div style="font-weight:800;">Cost vs iteration</div>
+          <div class="muted">Current cost and best-so-far cost</div>
+        </div>
+      </div>
+      <canvas id="costChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:800;">Temperature vs iteration</div>
+      <div class="muted">Cooling schedule behavior</div>
+      <canvas id="tempChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:800;">Acceptance rate</div>
+      <div class="muted">Rolling mean over last 200 logged points</div>
+      <canvas id="accChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:800;">Raw accepted (0/1)</div>
+      <div class="muted">Shows if each logged step was accepted</div>
+      <canvas id="acceptedChart"></canvas>
+    </div>
+  </div>
+
+  <div id="status" class="muted" style="margin-top: 16px;"></div>
+
+<script>
+  let timer = null;
+  let paused = false;
+
+  const fmt = (x, digits=4) => {
+    if (x === null || x === undefined || Number.isNaN(x)) return "—";
+    if (Math.abs(x) >= 1000) return Number(x).toFixed(2);
+    return Number(x).toFixed(digits);
+  };
+  const pct = (x) => {
+    if (x === null || x === undefined || Number.isNaN(x)) return "—";
+    return (Number(x) * 100).toFixed(1) + "%";
+  };
+
+  const costChart = new Chart(document.getElementById("costChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Current cost", data: [], pointRadius: 0, borderWidth: 2 },
+      { label: "Best cost", data: [], pointRadius: 0, borderWidth: 2 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
+  });
+
+  const tempChart = new Chart(document.getElementById("tempChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Temperature", data: [], pointRadius: 0, borderWidth: 2 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
+  });
+
+  const accChart = new Chart(document.getElementById("accChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Acceptance rate (last 200)", data: [], pointRadius: 0, borderWidth: 2 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { min: 0, max: 1 } } }
+  });
+
+  const acceptedChart = new Chart(document.getElementById("acceptedChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Accepted (0/1)", data: [], pointRadius: 0, borderWidth: 1 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { min: 0, max: 1 } } }
+  });
+
+  async function refresh() {
+    if (paused) return;
+
+    const maxRows = document.getElementById("maxRows").value || 2000;
+
+    try {
+      const [summaryRes, dataRes] = await Promise.all([
+        fetch("/api/summary"),
+        fetch(`/api/data?max_rows=${encodeURIComponent(maxRows)}`)
+      ]);
+
+      if (!summaryRes.ok || !dataRes.ok) {
+        document.getElementById("status").textContent = "Waiting for log file / data…";
+        return;
+      }
+
+      const summaryJson = await summaryRes.json();
+      const dataJson = await dataRes.json();
+
+      const s = summaryJson.summary;
+      document.getElementById("kpiIteration").textContent = s?.iteration ?? "—";
+      document.getElementById("kpiTemp").textContent = fmt(s?.temperature, 6);
+      document.getElementById("kpiCurrent").textContent = fmt(s?.current_cost, 6);
+      document.getElementById("kpiBest").textContent = fmt(s?.best_cost, 6);
+      document.getElementById("kpiAccOverall").textContent = pct(s?.overall_acceptance);
+      document.getElementById("kpiAcc200").textContent = pct(s?.acceptance_rate_200);
+
+      const rows = dataJson.rows;
+      if (!rows || rows.iteration.length === 0) {
+        document.getElementById("status").textContent = "Log has header only (no rows yet).";
+        return;
+      }
+
+      const labels = rows.iteration;
+      costChart.data.labels = labels;
+      costChart.data.datasets[0].data = rows.current_cost;
+      costChart.data.datasets[1].data = rows.best_cost;
+      costChart.update();
+
+      tempChart.data.labels = labels;
+      tempChart.data.datasets[0].data = rows.temperature;
+      tempChart.update();
+
+      accChart.data.labels = labels;
+      accChart.data.datasets[0].data = rows.acceptance_rate_200;
+      accChart.update();
+
+      acceptedChart.data.labels = labels;
+      acceptedChart.data.datasets[0].data = rows.accepted;
+      acceptedChart.update();
+
+      document.getElementById("status").textContent =
+        `Updated. Showing last ${labels.length} rows.`;
+
+    } catch (e) {
+      document.getElementById("status").textContent = "Error reading data: " + e;
+    }
+  }
+
+  function applySettings() {
+    const seconds = Math.max(1, Number(document.getElementById("refreshSeconds").value || 2));
+    if (timer) clearInterval(timer);
+    timer = setInterval(refresh, seconds * 1000);
+    refresh();
+  }
+
+  document.getElementById("applyBtn").addEventListener("click", applySettings);
+  document.getElementById("pauseBtn").addEventListener("click", () => {
+    paused = !paused;
+    document.getElementById("pauseBtn").textContent = paused ? "Resume" : "Pause";
+    if (!paused) refresh();
+  });
+
+  applySettings();
+</script>
+</body>
+</html>

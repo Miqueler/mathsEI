@@ -82,27 +82,27 @@ positions =[(1.5, 0),(2.5, 0),(3.5, 0),(4.5, 0),(5.5, 0),(6.5, 0),(7.5, 0),(8.5,
             (2.25, 2),(3.25, 2),(4.25, 2),(5.25, 2),(6.25, 2),(7.25, 2),(8.25, 2)]
 
 initial_layout = generate_random_layout(letters, positions)
-letter_probs = load_probability_dictionary_from_txt("files/single_char_prob.txt")
-digraph_probs = load_probability_dictionary_from_txt("files/digraphs_prob.txt")
+letter_probs = load_probability_dictionary_from_txt("annealing/files/single_char_prob.txt")
+digraph_probs = load_probability_dictionary_from_txt("annealing/files/digraphs_prob.txt")
 
 
 file_counter = 1
-while os.path.exists(f"result_log/results{file_counter}.txt"):
+while os.path.exists(f"annealing/result_log/results{file_counter}.txt"):
     file_counter += 1
 
 
 logger = ProgressLogger(
-    filename=f"progress_logs/annealing_progress{file_counter}.csv",
+    filename=f"annealing/progress_logs/annealing_progress{file_counter}.csv",
     log_every=1000
 )
 
 best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs,
                                                                                                 initial_temperature = 5000, final_temperature = 1, 
-                                                                                                cooling_rate = 0.99, iterations_per_temperature = 100, 
+                                                                                                cooling_rate = 0.99, iterations_per_temperature = 1000, 
                                                                                                 logger=logger).values()
 
 
 
-results = open(f"result_log/results{file_counter}.txt", "x")
+results = open(f"annealing/result_log/results{file_counter}.txt", "x")
 results.write(f"{best_layout}\n{best_cost}\n{cost_history}\n{temperature_history}")
 print("Finalized")
