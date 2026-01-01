@@ -2,6 +2,7 @@ import math
 import random
 import os
 from clac_layout_cost import *
+from progress_logger import ProgressLogger
 
 
 def generate_random_layout(letters: list, positions: list):
@@ -36,6 +37,7 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
                                         final_temperature: float,
                                         cooling_rate: float,
                                         iterations_per_temperature: int,
+                                        logger: ProgressLogger
                                         ):
     current_cost = calculate_keyboard_cost(initial_layout, digraph_probs, letter_probs)
     best_cost = current_cost
@@ -51,17 +53,22 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
             neighbour_layout = swap_two_letters(best_layout)
             neighbour_cost = calculate_keyboard_cost(neighbour_layout, digraph_probs, letter_probs)
 
-            if accetpt_neighbour(current_cost, neighbour_cost, current_temperature):
+            accept = accetpt_neighbour(current_cost, neighbour_cost, current_temperature)
+            if accept:
                 current_layout = neighbour_layout
                 current_cost = neighbour_cost
 
                 if current_cost < best_cost:
                     best_cost = current_cost
                     best_layout = current_layout
+
             cost_history.append(current_cost)
             temperature_history.append(current_temperature)
 
+            logger.log(current_temperature, current_cost, best_cost, accept)
+
         current_temperature *= cooling_rate
+    logger.close()
     return {
         "best_layout": best_layout,
         "best_cost": best_cost,
@@ -70,18 +77,32 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
     }
 
 letters = list("abcdefghijklmnopqrstuvwxyzñ")
-positions =[(1.5, 0),(2.5, 0),(3.5, 0),(4.5, 0),(5.5, 0),(6.5, 0),(7.5, 0),(8.5, 0),(9.5, 0),(10.5, 0),(1.75, 1),(2.75, 1),(3.75, 1),(4.75, 1),(5.75, 1),(6.75, 1),(7.75, 1),(8.75, 1),(9.75, 1),(10.75, 1),(2.25, 2),(3.25, 2),(4.25, 2),(5.25, 2),(6.25, 2),(7.25, 2),(8.25, 2)]
+positions =[(1.5, 0),(2.5, 0),(3.5, 0),(4.5, 0),(5.5, 0),(6.5, 0),(7.5, 0),(8.5, 0),(9.5, 0),(10.5, 0),
+            (1.75, 1),(2.75, 1),(3.75, 1),(4.75, 1),(5.75, 1),(6.75, 1),(7.75, 1),(8.75, 1),(9.75, 1),(10.75, 1),
+            (2.25, 2),(3.25, 2),(4.25, 2),(5.25, 2),(6.25, 2),(7.25, 2),(8.25, 2)]
 
 initial_layout = generate_random_layout(letters, positions)
 letter_probs = load_probability_dictionary_from_txt("files/single_char_prob.txt")
 digraph_probs = load_probability_dictionary_from_txt("files/digraphs_prob.txt")
 
-best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs, initial_temperature = 5000, final_temperature = 1, cooling_rate = 0.9, iterations_per_temperature = 10).values()
 
 file_counter = 1
-while os.path.exists(f"result_log/results{file_counter}"):
+while os.path.exists(f"result_log/results{file_counter}.txt"):
     file_counter += 1
 
-results = open(f"result_log/results{file_counter}", "x")
+
+logger = ProgressLogger(
+    filename=f"progress_logs/annealing_progress{file_counter}.csv",
+    log_every=1000
+)
+
+best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs,
+                                                                                                initial_temperature = 5000, final_temperature = 1, 
+                                                                                                cooling_rate = 0.99, iterations_per_temperature = 100, 
+                                                                                                logger=logger).values()
+
+
+
+results = open(f"result_log/results{file_counter}.txt", "x")
 results.write(f"{best_layout}\n{best_cost}\n{cost_history}\n{temperature_history}")
 print("Finalized")
