@@ -1,3 +1,4 @@
+import json
 import math 
 import random
 import os
@@ -14,9 +15,11 @@ def generate_random_layout(letters: list, positions: list):
 
 
 def swap_two_letters(layout: dict):
-    letter_1, letter_2 = random.sample(list(layout.keys()), 2)
-    layout[letter_1], layout[letter_2] = layout[letter_2], layout[letter_1]
-    return layout
+    # Work on a copy so we don't mutate the input layout in-place
+    new_layout = dict(layout)
+    letter_1, letter_2 = random.sample(list(new_layout.keys()), 2)
+    new_layout[letter_1], new_layout[letter_2] = new_layout[letter_2], new_layout[letter_1]
+    return new_layout
 
 
 def accetpt_neighbour(current_cost: float, neighbour_cost: float, temperature: float):
@@ -30,6 +33,16 @@ def accetpt_neighbour(current_cost: float, neighbour_cost: float, temperature: f
     return random.random() < acceptance_probability
 
 
+def write_best_layout_snapshot(layout: dict, best_cost: float, path: str):
+    # Store as JSON so the dashboard can read it live.
+    payload = {
+        "best_cost": best_cost,
+        "layout": {k: [v[0], v[1]] for k, v in layout.items()}
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f)
+
+
 def simmulated_annealing_optimize_layout(initial_layout: dict,
                                         letter_probs: dict,
                                         digraph_probs: dict,
@@ -39,18 +52,22 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
                                         iterations_per_temperature: int,
                                         logger: ProgressLogger
                                         ):
-    current_cost = calculate_keyboard_cost(initial_layout, digraph_probs, letter_probs)
+    
+    current_layout = dict(initial_layout)
+    current_cost = calculate_keyboard_cost(current_layout, digraph_probs, letter_probs)
     best_cost = current_cost
-    best_layout = initial_layout
-    current_layout = initial_layout
+    best_layout = dict(initial_layout)
 
     current_temperature = initial_temperature
 
     cost_history = []
     temperature_history = []
+    total_moves = 0
+    accepted_moves = 0
+    snapshot_path = "annealing/progress_logs/current_best_layout.json"
     while current_temperature > final_temperature:
         for i in range(iterations_per_temperature):
-            neighbour_layout = swap_two_letters(best_layout)
+            neighbour_layout = swap_two_letters(current_layout)
             neighbour_cost = calculate_keyboard_cost(neighbour_layout, digraph_probs, letter_probs)
 
             accept = accetpt_neighbour(current_cost, neighbour_cost, current_temperature)
@@ -61,11 +78,38 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
                 if current_cost < best_cost:
                     best_cost = current_cost
                     best_layout = current_layout
+                    write_best_layout_snapshot(best_layout, best_cost, snapshot_path)
+
+            #Just for logging
+            total_moves += 1
+            if accept:
+                accepted_moves += 1
 
             cost_history.append(current_cost)
             temperature_history.append(current_temperature)
-
-            logger.log(current_temperature, current_cost, best_cost, accept)
+            
+            if total_moves % 1000 == 0:
+                acceptance_rate = accepted_moves / total_moves if total_moves else 0.0
+                print(f"acceptance_rate={acceptance_rate:.3f}  T={current_temperature:.3f}  current={current_cost:.3f}  best={best_cost:.3f}")
+            digraph_cost = None
+            single_letter_cost = None
+            if logger.should_log():
+                digraph_cost, single_letter_cost, _ = calculate_keyboard_cost_components(
+                    current_layout,
+                    digraph_probs,
+                    letter_probs
+                )
+            accepted_moves, total_moves = logger.log(
+                current_temperature,
+                current_cost,
+                best_cost,
+                accepted_moves,
+                total_moves,
+                digraph_cost=digraph_cost,
+                single_letter_cost=single_letter_cost
+            )
+            if total_moves == 0:
+                write_best_layout_snapshot(best_layout, best_cost, snapshot_path)
 
         current_temperature *= cooling_rate
     logger.close()
@@ -96,9 +140,13 @@ logger = ProgressLogger(
     log_every=1000
 )
 
-best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs,
-                                                                                                initial_temperature = 5000, final_temperature = 1, 
-                                                                                                cooling_rate = 0.99, iterations_per_temperature = 1000, 
+best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout,
+                                                                                                letter_probs,
+                                                                                                digraph_probs,
+                                                                                                initial_temperature = .1, 
+                                                                                                final_temperature = 1e-4,
+                                                                                                cooling_rate = 0.999, 
+                                                                                                iterations_per_temperature = 1000, 
                                                                                                 logger=logger).values()
 
 

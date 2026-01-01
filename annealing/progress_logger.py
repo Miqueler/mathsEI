@@ -20,27 +20,35 @@ class ProgressLogger:
                 "temperature",
                 "current_cost",
                 "best_cost",
-                "accepted"
+                "acceptance_ratio",
+                "digraph_cost",
+                "single_letter_cost"
             ])
             self.file.flush()
 
-    def log(self, temperature, current_cost, best_cost, accepted):
+    def should_log(self):
+        return (self.iteration + 1) % self.log_every == 0
+
+    def log(self, temperature, current_cost, best_cost, accepted_moves, total_moves, digraph_cost=None, single_letter_cost=None):
         self.iteration += 1
 
         if self.iteration % self.log_every != 0:
-            return
+            return accepted_moves, total_moves
 
         elapsed = time.time() - self.start_time
-
+        acceptance_ratio = accepted_moves / total_moves if total_moves else 0.0
         self.writer.writerow([
             self.iteration,
             round(elapsed, 2),
             temperature,
             current_cost,
             best_cost,
-            int(accepted)
+            round(acceptance_ratio, 6),
+            digraph_cost,
+            single_letter_cost
         ])
         self.file.flush()
+        return 0, 0
 
     def close(self):
         self.file.close()

@@ -130,6 +130,49 @@ def calculate_keyboard_cost(
     return total_cost
 
 
+def calculate_keyboard_cost_components(
+    letter_coordinates,
+    digraph_probabilities,
+    single_letter_probabilities,
+    key_width=1.0,
+    intercept_a=0.0,
+    slope_b=1.0,
+    digraph_weight=1.0,
+    single_letter_weight=0.1,
+    normalize_inputs=True,
+):
+    if normalize_inputs:
+        digraph_probabilities = normalize_probability_dictionary(digraph_probabilities)
+        single_letter_probabilities = normalize_probability_dictionary(single_letter_probabilities)
+
+    letter_to_index, fitts_time_by_index = build_fitts_cost_matrix_for_layout(
+        letter_coordinates=letter_coordinates,
+        key_width=key_width,
+        intercept_a=intercept_a,
+        slope_b=slope_b,
+    )
+
+    digraph_cost = 0.0
+    for digraph, digraph_probability in digraph_probabilities.items():
+        from_letter = digraph[0]
+        to_letter = digraph[1]
+        from_index = letter_to_index[from_letter]
+        to_index = letter_to_index[to_letter]
+        movement_time = fitts_time_by_index[from_index][to_index]
+        digraph_cost += float(digraph_probability) * movement_time
+
+    home_x, home_y = compute_home_point(letter_coordinates)
+
+    single_letter_cost = 0.0
+    for letter, letter_probability in single_letter_probabilities.items():
+        letter_x, letter_y = letter_coordinates[letter]
+        distance_to_home = math.hypot(letter_x - home_x, letter_y - home_y)
+        single_letter_cost += float(letter_probability) * distance_to_home
+
+    total_cost = digraph_weight * digraph_cost + single_letter_weight * single_letter_cost
+    return digraph_cost, single_letter_cost, total_cost
+
+
 
 #qwerty_pos = {
 #    'q': (1.5, 0), 'w': (2.5, 0), 'e': (3.5, 0), 'r': (4.5, 0),

@@ -50,6 +50,12 @@
     <div class="card"><div class="label">Acceptance (last 200)</div><div id="kpiAcc200" class="value">—</div></div>
   </div>
 
+  <div class="panel" style="margin-top: 16px;">
+    <div style="font-weight:800;">Current keyboard</div>
+    <div class="muted">Latest completed layout from results file</div>
+    <div id="keyboard" style="margin-top: 10px; position: relative; height: 200px; display:block; margin-left:auto; margin-right:auto;"></div>
+  </div>
+
   <div class="grid">
     <div class="panel">
       <div style="display:flex; justify-content:space-between; align-items:end;">
@@ -69,14 +75,26 @@
 
     <div class="panel">
       <div style="font-weight:800;">Acceptance rate</div>
-      <div class="muted">Rolling mean over last 200 logged points</div>
+      <div class="muted">Per-log acceptance and rolling mean (200)</div>
       <canvas id="accChart"></canvas>
     </div>
 
     <div class="panel">
-      <div style="font-weight:800;">Raw accepted (0/1)</div>
-      <div class="muted">Shows if each logged step was accepted</div>
-      <canvas id="acceptedChart"></canvas>
+      <div style="font-weight:800;">Cost gap vs iteration</div>
+      <div class="muted">Current cost minus best cost</div>
+      <canvas id="gapChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:800;">Cost improvement per temperature</div>
+      <div class="muted">Best-cost drop within each temperature level</div>
+      <canvas id="tempImproveChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <div style="font-weight:800;">Cost component breakdown</div>
+      <div class="muted">Digraph vs single-letter contributions</div>
+      <canvas id="componentChart"></canvas>
     </div>
   </div>
 
@@ -110,23 +128,46 @@
     data: { labels: [], datasets: [
       { label: "Temperature", data: [], pointRadius: 0, borderWidth: 2 },
     ]},
-    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
+    options: { 
+      animation: false, 
+      responsive: true, 
+      interaction: { mode: 'index', intersect: false },
+      scales: { y: { type: "logarithmic", min: 1e-6, ticks: { callback: (v) => v.toExponential(1) } } }
+    }
   });
 
   const accChart = new Chart(document.getElementById("accChart"), {
     type: "line",
     data: { labels: [], datasets: [
-      { label: "Acceptance rate (last 200)", data: [], pointRadius: 0, borderWidth: 2 },
+      { label: "Acceptance rate", data: [], pointRadius: 0, borderWidth: 2 },
+      { label: "Rolling mean (200)", data: [], pointRadius: 0, borderWidth: 2 },
     ]},
     options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { min: 0, max: 1 } } }
   });
 
-  const acceptedChart = new Chart(document.getElementById("acceptedChart"), {
+  const gapChart = new Chart(document.getElementById("gapChart"), {
     type: "line",
     data: { labels: [], datasets: [
-      { label: "Accepted (0/1)", data: [], pointRadius: 0, borderWidth: 1 },
+      { label: "Cost gap", data: [], pointRadius: 0, borderWidth: 2 },
     ]},
-    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { min: 0, max: 1 } } }
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
+  });
+
+  const tempImproveChart = new Chart(document.getElementById("tempImproveChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Improvement", data: [], pointRadius: 0, borderWidth: 2 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
+  });
+
+  const componentChart = new Chart(document.getElementById("componentChart"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "Digraph cost (weighted)", data: [], pointRadius: 0, borderWidth: 2 },
+      { label: "Single-letter cost (weighted)", data: [], pointRadius: 0, borderWidth: 2 },
+    ]},
+    options: { animation: false, responsive: true, interaction: { mode: 'index', intersect: false } }
   });
 
   async function refresh() {
@@ -135,9 +176,10 @@
     const maxRows = document.getElementById("maxRows").value || 2000;
 
     try {
-      const [summaryRes, dataRes] = await Promise.all([
+      const [summaryRes, dataRes, keyboardRes] = await Promise.all([
         fetch("/api/summary"),
-        fetch(`/api/data?max_rows=${encodeURIComponent(maxRows)}`)
+        fetch(`/api/data?max_rows=${encodeURIComponent(maxRows)}`),
+        fetch("/api/keyboard")
       ]);
 
       if (!summaryRes.ok || !dataRes.ok) {
@@ -147,6 +189,10 @@
 
       const summaryJson = await summaryRes.json();
       const dataJson = await dataRes.json();
+      if (keyboardRes.ok) {
+        const keyboardJson = await keyboardRes.json();
+        renderKeyboard(keyboardJson.keys || []);
+      }
 
       const s = summaryJson.summary;
       document.getElementById("kpiIteration").textContent = s?.iteration ?? "—";
@@ -169,16 +215,26 @@
       costChart.update();
 
       tempChart.data.labels = labels;
-      tempChart.data.datasets[0].data = rows.temperature;
+      tempChart.data.datasets[0].data = rows.temperature.map(v => (v > 0 ? v : null));
       tempChart.update();
 
       accChart.data.labels = labels;
-      accChart.data.datasets[0].data = rows.acceptance_rate_200;
+      accChart.data.datasets[0].data = rows.acceptance_ratio;
+      accChart.data.datasets[1].data = rows.acceptance_rate_200;
       accChart.update();
 
-      acceptedChart.data.labels = labels;
-      acceptedChart.data.datasets[0].data = rows.accepted;
-      acceptedChart.update();
+      gapChart.data.labels = labels;
+      gapChart.data.datasets[0].data = rows.cost_gap;
+      gapChart.update();
+
+      tempImproveChart.data.labels = rows.temp_improvement_iteration || [];
+      tempImproveChart.data.datasets[0].data = rows.temp_improvement || [];
+      tempImproveChart.update();
+
+      componentChart.data.labels = labels;
+      componentChart.data.datasets[0].data = rows.digraph_cost_weighted || [];
+      componentChart.data.datasets[1].data = rows.single_letter_cost_weighted || [];
+      componentChart.update();
 
       document.getElementById("status").textContent =
         `Updated. Showing last ${labels.length} rows.`;
@@ -186,6 +242,40 @@
     } catch (e) {
       document.getElementById("status").textContent = "Error reading data: " + e;
     }
+  }
+
+  function renderKeyboard(keys) {
+    const container = document.getElementById("keyboard");
+    container.innerHTML = "";
+    if (!keys || keys.length === 0) {
+      container.textContent = "No keyboard layout found yet.";
+      return;
+    }
+    const scale = 36;
+    const minX = Math.min(...keys.map(k => k.x));
+    const minY = Math.min(...keys.map(k => k.y));
+    const maxX = Math.max(...keys.map(k => k.x));
+    const maxY = Math.max(...keys.map(k => k.y));
+    container.style.width = `${(maxX - minX + 1) * scale}px`;
+    container.style.height = `${(maxY - minY + 1) * scale + 24}px`;
+
+    keys.forEach((k) => {
+      const key = document.createElement("div");
+      key.textContent = k.letter;
+      key.style.position = "absolute";
+      key.style.left = `${(k.x - minX) * scale}px`;
+      key.style.top = `${(k.y - minY) * scale}px`;
+      key.style.width = `${scale - 4}px`;
+      key.style.height = `${scale - 4}px`;
+      key.style.display = "flex";
+      key.style.alignItems = "center";
+      key.style.justifyContent = "center";
+      key.style.border = "1px solid #e5e7eb";
+      key.style.borderRadius = "8px";
+      key.style.fontWeight = "700";
+      key.style.background = "#f9fafb";
+      container.appendChild(key);
+    });
   }
 
   function applySettings() {
