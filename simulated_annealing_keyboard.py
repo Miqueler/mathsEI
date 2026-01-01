@@ -1,5 +1,6 @@
 import math 
 import random
+import os
 from clac_layout_cost import *
 
 
@@ -68,7 +69,6 @@ def simmulated_annealing_optimize_layout(initial_layout: dict,
         "temperature_history": temperature_history
     }
 
-
 letters = list("abcdefghijklmnopqrstuvwxyzñ")
 positions =[(1.5, 0),(2.5, 0),(3.5, 0),(4.5, 0),(5.5, 0),(6.5, 0),(7.5, 0),(8.5, 0),(9.5, 0),(10.5, 0),(1.75, 1),(2.75, 1),(3.75, 1),(4.75, 1),(5.75, 1),(6.75, 1),(7.75, 1),(8.75, 1),(9.75, 1),(10.75, 1),(2.25, 2),(3.25, 2),(4.25, 2),(5.25, 2),(6.25, 2),(7.25, 2),(8.25, 2)]
 
@@ -76,7 +76,12 @@ initial_layout = generate_random_layout(letters, positions)
 letter_probs = load_probability_dictionary_from_txt("files/single_char_prob.txt")
 digraph_probs = load_probability_dictionary_from_txt("files/digraphs_prob.txt")
 
-best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs, initial_temperature = 5000, final_temperature = 1, cooling_rate = 0.99, iterations_per_temperature = 100).values()
-results = open("files/results", "w")
+best_layout, best_cost, cost_history, temperature_history = simmulated_annealing_optimize_layout(initial_layout, letter_probs, digraph_probs, initial_temperature = 5000, final_temperature = 1, cooling_rate = 0.9, iterations_per_temperature = 10).values()
+
+file_counter = 1
+while os.path.exists(f"result_log/results{file_counter}"):
+    file_counter += 1
+
+results = open(f"result_log/results{file_counter}", "x")
 results.write(f"{best_layout}\n{best_cost}\n{cost_history}\n{temperature_history}")
 print("Finalized")
