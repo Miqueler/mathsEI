@@ -145,8 +145,8 @@ best_layout, best_cost, cost_history, temperature_history = simmulated_annealing
                                                                                                 digraph_probs,
                                                                                                 initial_temperature = .1, 
                                                                                                 final_temperature = 1e-4,
-                                                                                                cooling_rate = 0.99, 
-                                                                                                iterations_per_temperature = 100, 
+                                                                                                cooling_rate = 0.999, 
+                                                                                                iterations_per_temperature = 1000, 
                                                                                                 logger=logger).values()
 
 
