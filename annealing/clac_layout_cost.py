@@ -174,23 +174,23 @@ def calculate_keyboard_cost_components(
 
 
 
-#qwerty_pos = {
-#    'q': (1.5, 0), 'w': (2.5, 0), 'e': (3.5, 0), 'r': (4.5, 0),
-#    't': (5.5, 0), 'y': (6.5, 0), 'u': (7.5, 0), 'i': (8.5, 0),
-#    'o': (9.5, 0), 'p': (10.5, 0),
-#
-#    'a': (1.75, 1), 's': (2.75, 1), 'd': (3.75, 1),
-#    'f': (4.75, 1), 'g': (5.75, 1), 'h': (6.75, 1),
-#    'j': (7.75, 1), 'k': (8.75, 1), 'l': (9.75, 1),
-#    'ñ': (10.75, 1),
-#
-#    'z': (2.25, 2), 'x': (3.25, 2), 'c': (4.25, 2),
-#    'v': (5.25, 2), 'b': (6.25, 2), 'n': (7.25, 2),
-#    'm': (8.25, 2),
-#}
-#
-#digraph_probs = load_probability_dictionary_from_txt("files/digraphs_prob.txt")
-#char_probs = load_probability_dictionary_from_txt("files/single_char_prob.txt")
-#
-#keyboard_cost = calculate_keyboard_cost(qwerty_pos, digraph_probs, char_probs)
-#print(keyboard_cost)
+qwerty_pos = {
+    'q': (1.5, 0), 'w': (2.5, 0), 'e': (3.5, 0), 'r': (4.5, 0),
+    't': (5.5, 0), 'y': (6.5, 0), 'u': (7.5, 0), 'i': (8.5, 0),
+    'o': (9.5, 0), 'p': (10.5, 0),
+
+    'a': (1.75, 1), 's': (2.75, 1), 'd': (3.75, 1),
+    'f': (4.75, 1), 'g': (5.75, 1), 'h': (6.75, 1),
+    'j': (7.75, 1), 'k': (8.75, 1), 'l': (9.75, 1),
+    'ñ': (10.75, 1),
+
+    'z': (2.25, 2), 'x': (3.25, 2), 'c': (4.25, 2),
+    'v': (5.25, 2), 'b': (6.25, 2), 'n': (7.25, 2),
+    'm': (8.25, 2),
+}
+
+digraph_probs = load_probability_dictionary_from_txt("annealing/files/digraphs_prob.txt")
+char_probs = load_probability_dictionary_from_txt("annealing/files/single_char_prob.txt")
+
+keyboard_cost = calculate_keyboard_cost(qwerty_pos, digraph_probs, char_probs)
+print(keyboard_cost)

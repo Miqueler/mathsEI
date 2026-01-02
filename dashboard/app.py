@@ -7,12 +7,37 @@ from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
-file_counter = 1
-while os.path.exists(f"annealing/result_log/results{file_counter}.txt"):
-    file_counter += 1
-CSV_PATH = f"annealing/progress_logs/annealing_progress{file_counter}.csv"
+PROGRESS_DIR = "annealing/progress_logs"
 RESULTS_DIR = "annealing/result_log"
 LIVE_LAYOUT_PATH = "annealing/progress_logs/current_best_layout.json"
+
+def list_runs():
+    runs = set()
+    if os.path.isdir(PROGRESS_DIR):
+        for name in os.listdir(PROGRESS_DIR):
+            match = re.fullmatch(r"annealing_progress(\d+)\.csv", name)
+            if match:
+                runs.add(int(match.group(1)))
+    if os.path.isdir(RESULTS_DIR):
+        for name in os.listdir(RESULTS_DIR):
+            match = re.fullmatch(r"results(\d+)\.txt", name)
+            if match:
+                runs.add(int(match.group(1)))
+    return sorted(runs)
+
+def get_latest_run():
+    runs = list_runs()
+    return runs[-1] if runs else None
+
+def get_csv_path(run=None):
+    if run is None:
+        run = get_latest_run()
+    if run is None:
+        return None
+    return os.path.join(PROGRESS_DIR, f"annealing_progress{run}.csv")
+
+DEFAULT_RUN = get_latest_run()
+CSV_PATH = get_csv_path(DEFAULT_RUN)
 
 def get_latest_results_path():
     if not os.path.isdir(RESULTS_DIR):
@@ -29,13 +54,14 @@ def get_latest_results_path():
             latest_path = os.path.join(RESULTS_DIR, name)
     return latest_path
 
-def load_data(max_rows=5000):
-    if not os.path.isfile(CSV_PATH):
+def load_data(max_rows=5000, run=None):
+    csv_path = get_csv_path(run)
+    if not csv_path or not os.path.isfile(csv_path):
         return None
 
     # Read CSV; handle header-only gracefully
     try:
-        df = pd.read_csv(CSV_PATH)
+        df = pd.read_csv(csv_path)
     except Exception:
         return None
 
@@ -74,18 +100,26 @@ def load_data(max_rows=5000):
 
     return df
 
-def load_keyboard_layout():
-    if os.path.isfile(LIVE_LAYOUT_PATH):
-        try:
-            with open(LIVE_LAYOUT_PATH, "r") as f:
-                payload = json.load(f)
-            layout = payload.get("layout")
-            if isinstance(layout, dict):
-                return layout
-        except Exception:
-            pass
+def load_keyboard_layout(run=None):
+    latest_run = get_latest_run()
+    if run is None or run == latest_run:
+        if os.path.isfile(LIVE_LAYOUT_PATH):
+            try:
+                with open(LIVE_LAYOUT_PATH, "r") as f:
+                    payload = json.load(f)
+                layout = payload.get("layout")
+                if isinstance(layout, dict):
+                    return layout
+            except Exception:
+                pass
 
-    results_path = get_latest_results_path()
+    if run is not None:
+        results_path = os.path.join(RESULTS_DIR, f"results{run}.txt")
+        if not os.path.isfile(results_path):
+            return None
+    else:
+        results_path = get_latest_results_path()
+
     if not results_path or not os.path.isfile(results_path):
         return None
     try:
@@ -103,16 +137,36 @@ def load_keyboard_layout():
         return None
     return layout
 
+def parse_run_param(value):
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+@app.route("/api/runs")
+def api_runs():
+    runs = list_runs()
+    return jsonify({"ok": True, "runs": runs, "latest": get_latest_run()})
+
 @app.route("/")
 def index():
-    return render_template("index.html", csv_path=CSV_PATH)
+    return render_template(
+        "index.html",
+        csv_path=CSV_PATH or "—",
+        runs=list_runs(),
+        default_run=DEFAULT_RUN,
+    )
 
 @app.route("/api/data")
 def api_data():
     max_rows = int(request.args.get("max_rows", "2000"))
-    df = load_data(max_rows=max_rows)
+    run = parse_run_param(request.args.get("run"))
+    csv_path = get_csv_path(run)
+    df = load_data(max_rows=max_rows, run=run)
     if df is None:
-        return jsonify({"ok": False, "error": f"Log file not found or unreadable: {CSV_PATH}"}), 404
+        return jsonify({"ok": False, "error": f"Log file not found or unreadable: {csv_path}"}), 404
     if df.shape[0] == 0:
         return jsonify({"ok": True, "rows": []})
 
@@ -150,9 +204,11 @@ def api_data():
 
 @app.route("/api/summary")
 def api_summary():
-    df = load_data(max_rows=5000)
+    run = parse_run_param(request.args.get("run"))
+    csv_path = get_csv_path(run)
+    df = load_data(max_rows=5000, run=run)
     if df is None:
-        return jsonify({"ok": False, "error": f"Log file not found or unreadable: {CSV_PATH}"}), 404
+        return jsonify({"ok": False, "error": f"Log file not found or unreadable: {csv_path}"}), 404
     if df.shape[0] == 0:
         return jsonify({"ok": True, "summary": {"status": "header_only"}})
 
@@ -175,7 +231,8 @@ def api_summary():
 
 @app.route("/api/keyboard")
 def api_keyboard():
-    layout = load_keyboard_layout()
+    run = parse_run_param(request.args.get("run"))
+    layout = load_keyboard_layout(run=run)
     if layout is None:
         return jsonify({"ok": False, "error": "No results layout found."}), 404
 

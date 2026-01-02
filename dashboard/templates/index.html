@@ -29,9 +29,19 @@
   <div class="topbar">
     <div>
       <div style="font-size: 22px; font-weight: 800;">Simulated Annealing Dashboard</div>
-      <div class="muted">Reading: <b>{{ csv_path }}</b></div>
+      <div class="muted">Reading: <b id="csvPath">{{ csv_path }}</b></div>
     </div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+      <div class="muted">Run</div>
+      <select id="runSelect" style="padding: 8px 10px; border-radius: 12px; border: 1px solid #e5e7eb;">
+        {% if runs %}
+          {% for r in runs %}
+            <option value="{{ r }}" {% if r == default_run %}selected{% endif %}>Run {{ r }}</option>
+          {% endfor %}
+        {% else %}
+          <option value="">No runs</option>
+        {% endif %}
+      </select>
       <div class="muted">Refresh (s)</div>
       <input id="refreshSeconds" type="number" min="1" value="2"/>
       <div class="muted">Max rows</div>
@@ -103,6 +113,7 @@
 <script>
   let timer = null;
   let paused = false;
+  const defaultRun = {% if default_run is not none %}{{ default_run }}{% else %}null{% endif %};
 
   const fmt = (x, digits=4) => {
     if (x === null || x === undefined || Number.isNaN(x)) return "—";
@@ -174,12 +185,13 @@
     if (paused) return;
 
     const maxRows = document.getElementById("maxRows").value || 2000;
+    const run = getSelectedRun();
 
     try {
       const [summaryRes, dataRes, keyboardRes] = await Promise.all([
-        fetch("/api/summary"),
-        fetch(`/api/data?max_rows=${encodeURIComponent(maxRows)}`),
-        fetch("/api/keyboard")
+        fetch(`/api/summary?run=${encodeURIComponent(run ?? "")}`),
+        fetch(`/api/data?max_rows=${encodeURIComponent(maxRows)}&run=${encodeURIComponent(run ?? "")}`),
+        fetch(`/api/keyboard?run=${encodeURIComponent(run ?? "")}`)
       ]);
 
       if (!summaryRes.ok || !dataRes.ok) {
@@ -281,17 +293,38 @@
   function applySettings() {
     const seconds = Math.max(1, Number(document.getElementById("refreshSeconds").value || 2));
     if (timer) clearInterval(timer);
+    updateCsvPath();
     timer = setInterval(refresh, seconds * 1000);
     refresh();
   }
 
   document.getElementById("applyBtn").addEventListener("click", applySettings);
+  document.getElementById("runSelect").addEventListener("change", applySettings);
   document.getElementById("pauseBtn").addEventListener("click", () => {
     paused = !paused;
     document.getElementById("pauseBtn").textContent = paused ? "Resume" : "Pause";
     if (!paused) refresh();
   });
 
+  function getSelectedRun() {
+    const select = document.getElementById("runSelect");
+    if (!select || !select.value) return defaultRun;
+    const parsed = Number(select.value);
+    return Number.isFinite(parsed) ? parsed : defaultRun;
+  }
+
+  function updateCsvPath() {
+    const run = getSelectedRun();
+    const pathEl = document.getElementById("csvPath");
+    if (!pathEl) return;
+    if (run === null || run === undefined) {
+      pathEl.textContent = "—";
+      return;
+    }
+    pathEl.textContent = `annealing/progress_logs/annealing_progress${run}.csv`;
+  }
+
+  updateCsvPath();
   applySettings();
 </script>
 </body>
